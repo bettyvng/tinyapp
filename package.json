@@ -16,5 +16,8 @@
   "bugs": {
     "url": "https://github.com/bettyvng/tinyapp/issues"
   },
-  "homepage": "https://github.com/bettyvng/tinyapp#readme"
+  "homepage": "https://github.com/bettyvng/tinyapp#readme",
+  "dependencies": {
+    "express": "^4.17.1"
+  }
 }
