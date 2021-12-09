@@ -33,6 +33,22 @@ app.post("/urls/:shortURL/delete", (req, res) => {
     console.log('After short url delete');
     console.log(urlDatabase);
     res.send('OK');
+    return;
+  }
+  res.send('BAD');
+});
+
+
+app.post("/urls/:shortURL", (req, res) => {
+  const shortURL = req.params.shortURL;
+  if (urlDatabase[shortURL]) {
+    console.log('Before short url update');
+    console.log(urlDatabase);
+    urlDatabase[shortURL] = req.body.longURL;
+    console.log('After short url delete');
+    console.log(urlDatabase);
+    res.send('OK');
+    return;
   }
   res.send('BAD');
 });
