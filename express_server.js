@@ -24,6 +24,19 @@ app.post("/urls", (req, res) => {
   // res.send(result);         // Respond with 'Ok' (we will replace this)
 });
 
+app.post("/urls/:shortURL/delete", (req, res) => {
+  const shortURL = req.params.shortURL;
+  if (urlDatabase[shortURL]) {
+    console.log('Before short url delete');
+    console.log(urlDatabase);
+    delete urlDatabase[shortURL];
+    console.log('After short url delete');
+    console.log(urlDatabase);
+    res.send('OK');
+  }
+  res.send('BAD');
+});
+
 app.get("/", (req, res) => {
   res.send("Hello!");
 });
