@@ -1,8 +1,11 @@
 const express = require("express");
+var cookieSession = require('cookie-session');
+const bcrypt = require('bcryptjs');
+const bodyParser = require("body-parser");
+const { autoPrefixHttp, getUserByEmail, generateRandomString, urlsForUser } = require('./helpers');
+
 const app = express();
 const PORT = 8080; // default port 8080
-var cookieSession = require('cookie-session');
-const { getUserByEmail } = require('./helpers');
 
 app.set("view engine", "ejs");
 
@@ -39,32 +42,18 @@ const users = {
   }
 }
 
-function generateRandomString() {
-  return (Math.random() + 1).toString(36).substring(6);
-}
-
-function urlsForUser(id) {
-  const urls = {};
-  Object.keys(urlDatabase).forEach((shortURL) => {
-    if (urlDatabase[shortURL].userID === id) {
-      urls[shortURL] = urlDatabase[shortURL];
-    }
-  });
-  return urls;
-}
-
-const bcrypt = require('bcryptjs');
-
-const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({extended: true}));
 app.use(cookieSession({
   name: 'session',
   keys: ['Xy12345Fv'],
-
   // Cookie Options
   maxAge: 24 * 60 * 60 * 1000 // 24 hours
 }))
 
+/**
+ * Register a user with password to our application db
+ * Password will be hashed.
+ */
 app.post("/register", (req, res) => {
   if (!req.body.email || !req.body.password) {
     res.status(400).send('Bad Request');
@@ -76,7 +65,7 @@ app.post("/register", (req, res) => {
     res.status(400).send('Bad Request');
     return;
   }
-  const userId = generateRandomString();
+  const userId = generateRandomString(users);
   users[userId] = {
     id: userId,
     email: req.body.email,
@@ -88,10 +77,12 @@ app.post("/register", (req, res) => {
 
 app.post("/login", (req, res) => {
   const user = getUserByEmail(req.body.email, users);
+  // If no user found or mismatching password, reject unauthorized.
   if (!user || !bcrypt.compareSync(req.body.password, user.password)) {
     res.status(403).send('Unauthorized');
     return;
   }
+  // If user found and password is ok, redirect to urls view.
   req.session.user_id = user.id;
   res.redirect("/urls");
 });
@@ -106,21 +97,26 @@ app.post("/logout", (req, res) => {
   res.redirect("/urls");
 });
 
+/**
+ * Add a new tiny url to our application db.
+ */
 app.post("/urls", (req, res) => {
-  console.log(req.body);  // Log the POST request body to the console
   const user = users[req.session.user_id];
   if (!user) {
     res.redirect("/login");
     return;
   }
-  const shortURL = generateRandomString();
+  const shortURL = generateRandomString(urlDatabase);
   urlDatabase[shortURL] = {
-    longURL: req.body.longURL,
+    longURL: autoPrefixHttp(req.body.longURL),
     userID: user.id
   };
-  res.redirect(`/u/${shortURL}`);
+  res.redirect(`/urls/${shortURL}`);
 });
 
+/**
+ * Delete a short url entry
+ */
 app.post("/urls/:shortURL/delete", (req, res) => {
   const user = users[req.session.user_id];
   if (!user) {
@@ -129,19 +125,19 @@ app.post("/urls/:shortURL/delete", (req, res) => {
   }
   const shortURL = req.params.shortURL;
   const urlEntry = urlDatabase[shortURL];
+  // check first if urlEntry is defined to prevent error
+  // for attempting to read value from undefined.
   if (urlEntry && urlEntry.userID === user.id) {
-    console.log('Before short url delete');
-    console.log(urlDatabase);
     delete urlDatabase[shortURL];
-    console.log('After short url delete');
-    console.log(urlDatabase);
-    res.send('OK');
+    res.redirect("/urls");
     return;
   }
   res.status(404).send('Not Found');
 });
 
-
+/**
+ * Amend existing tiny url to another site
+ */
 app.post("/urls/:shortURL", (req, res) => {
   const user = users[req.session.user_id];
   if (!user) {
@@ -150,20 +146,27 @@ app.post("/urls/:shortURL", (req, res) => {
   }
   const shortURL = req.params.shortURL;
   const urlEntry = urlDatabase[shortURL];
+  // check first if urlEntry is defined to prevent error
+  // for attempting to read value from undefined.
   if (urlEntry && urlEntry.userID === user.id) {
-    console.log('Before short url update');
-    console.log(urlDatabase);
-    urlDatabase[shortURL].longURL = req.body.longURL;
-    console.log('After short url delete');
-    console.log(urlDatabase);
-    res.send('OK');
+    urlDatabase[shortURL].longURL = autoPrefixHttp(req.body.longURL);
+    res.redirect("/urls");
     return;
   }
   res.status(404).send('Not Found');
 });
 
+/**
+ * Load landing page and redirect to urls listing page
+ * if session exists
+ */
 app.get("/", (req, res) => {
-  res.send("Hello!");
+  const user = users[req.session.user_id];
+  if (user) {
+    res.redirect("/urls");
+    return;
+  }
+  res.redirect("/login");
 });
 
 app.get("/urls.json", (req, res) => {
@@ -174,6 +177,9 @@ app.get("/hello", (req, res) => {
   res.send("<html><body>Hello <b>World</b></body></html>\n");
 });
 
+/**
+ * Render login page
+ */
 app.get("/login", (req, res) => {
   const user = users[req.session.user_id];
   if (user) {
@@ -183,6 +189,9 @@ app.get("/login", (req, res) => {
   res.render("urls_login", { user });
 });
 
+/**
+ * Render register page
+ */
 app.get("/register", (req, res) => {
   const user = users[req.session.user_id];
   if (user) {
@@ -192,13 +201,16 @@ app.get("/register", (req, res) => {
   res.render("urls_registration", { user });
 });
 
+/**
+ * Render url listing page
+ */
 app.get("/urls", (req, res) => {
   const user = users[req.session.user_id];
   if (!user) {
     res.redirect("/login");
     return;
   }
-  const urls = urlsForUser(user.id);
+  const urls = urlsForUser(user.id, urlDatabase);
   const templateVars = {
     urls,
     user
@@ -206,6 +218,9 @@ app.get("/urls", (req, res) => {
   res.render("urls_index", templateVars);
 });
 
+/**
+ * Render tiny url addition page
+ */
 app.get("/urls/new", (req, res) => {
   const user = users[req.session.user_id];
   if (!user) {
@@ -215,6 +230,9 @@ app.get("/urls/new", (req, res) => {
   res.render("urls_new", { user });
 });
 
+/**
+ * Render tiny url info and modification page
+ */
 app.get("/urls/:shortURL", (req, res) => {
   const user = users[req.session.user_id];
   if (!user) {
@@ -234,6 +252,9 @@ app.get("/urls/:shortURL", (req, res) => {
   res.render("urls_show", templateVars);
 });
 
+/**
+ * Redirect to long url based on given short url
+ */
 app.get("/u/:shortURL", (req, res) => {
   const entry = urlDatabase[req.params.shortURL];
   if (!entry) {
